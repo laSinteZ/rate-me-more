@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Rate me more</title>
+    <!-- Vue -->
+    <script src="https://unpkg.com/vue/dist/vue.js"></script>
+    <!-- VueFire -->
+    <script src="https://unpkg.com/vuefire/dist/vuefire.js"></script>
+    <!-- Firebase -->
+    <script src="https://www.gstatic.com/firebasejs/3.7.1/firebase.js"></script>
+
+    <!-- Various styles -->
+    <link rel="stylesheet" href="css/bootstrap.min.css">
+    <link rel="stylesheet" href="css/bootstrap-theme.min.css">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+
+<body>
+
+    <div id="app">
+        <div class="welcome-block" v-if="stage==1">
+            <div class="welcome-text">
+                <h1>Welcome at RateMeMore! Once again!</h1>
+                <p>Thanks for taking part in this research for my bachelor thesis.</p>
+                <p>The rules are simple: you will see some pictures. Please, rate them, as you like. After rating everything
+                    on the screen press
+                    <button class="btn btn-default btn-static">Show Me More</button> . You can continue for as long as you
+                    want, there are a lot of pictures prepared. When you feel bored or tired, please stop and press
+                    <button class="btn btn-danger">I'm done</button> . However, try to keep on going for as long as you can.
+                </p>
+                <p>Before proceeding to the test, we will try a simple test to see if your computer is calibrated so you can
+                    see pictures correctly. This is very important for research</p>
+                <p>Please, fill information about your age and gender. It is necessary for statistics, but feel free to leave
+                    it empty</p>
+                <label>Age: <input type="number" min="0" max="200" v-model="user.age" class="form-control"></label>
+                <label>Gender: <select name="cars" v-model="user.gender" class="form-control">
+                <option value="0">Prefer not to tell</option>
+                <option value="1">Male</option>
+                <option value="2">Female</option>
+                <option value="3">Other</option>
+            </select></label><br><br>
+                <button class="btn btn-default" @click="toStage(2)">Proceed to calibration test</button>
+            </div>
+        </div>
+        <div class="welcome-block" v-if="stage==2">
+            <div class="calibration">
+                <h1>Calibration time!</h1>
+                <p>Please, enter, what numbers do you see at those pictures (if you see nothing, leave them empty)</p>
+                <div><img src="static/Ishihara_11.PNG" :height="calibrationHeight"> <label>Number on picture 1: <input
+                    type="number" min="0" max="200" v-model="calibration.first" class="form-control"></label></div>
+                <br>
+                <div><img src="static/Ishihara_19.PNG" :height="calibrationHeight"> <label>Number on picture 2: <input
+                    type="number" min="0" max="200" v-model="calibration.second" class="form-control"></label></div>
+                <br>
+                <button class="btn btn-default" @click="toStage(3)">Done. Proceed to test</button>
+            </div>
+        </div>
+        <div class="topnav" v-if="stage==3">
+            <div class="topnav-half">
+                <button class="btn btn-default" @click="showMeMore">Show Me More</button>
+            </div>
+            <div class="topnav-half2">
+                <button class="btn btn-danger" @click="toStage(4)">I'm done</button>
+            </div>
+        </div>
+        <div v-if="stage==3" class="test-wrapper" :style="{width: picWrapperWidth}">
+            <div v-for="pic in picsNow" class="pic-block">
+                <image-rate-vote :pic="pic" :pic-size="picSize"></image-rate-vote>
+                <number-rating :pic="pic" v-if="voteType == 0"></number-rating>
+                <heart-rating :pic="pic" v-if="voteType == 1"></heart-rating>
+                <like-rating :pic="pic" v-if="voteType == 2"></like-rating>
+            </div>
+        </div>
+        <div class="welcome-block" v-if="stage==4">
+            <div class="welcome-text">
+                <h1>Thanks for you help!</h1>
+                <p>Take them as token of gratitude</p>
+                <img src="static/morecats.jpeg" width="100%">
+            </div>
+        </div>
+        <div class="welcome-block" v-if="stage==400">
+            <div class="welcome-text">
+                <h1>Oops!</h1>
+                <p>Looks like you are running this site on Safari. Use Chrome instead please.</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const EventBus = new Vue();
+
+        const randomiseType = true;
+        var permutations = [0, 1, 2, 0, 2, 1, 1, 0, 2, 1, 2, 0, 2, 1, 0, 2, 0, 1, 0, 1, 2, 0, 2, 1, 1, 0, 2, 1, 2, 0, 2, 1, 0, 2, 0, 1];
+
+        function getRandomArbitrary(min, max) {
+            return Math.floor(Math.random() * (max - min)) + min;
+        }
+
+        // Initialize Firebase
+        let config = {
+            apiKey: "AIzaSyDq8fsT5LKEsI6kQc_mz1rTsalX_peOVLg",
+            authDomain: "rate-me-more.firebaseapp.com",
+            databaseURL: "https://rate-me-more.firebaseio.com",
+            storageBucket: "rate-me-more.appspot.com",
+            messagingSenderId: "847610330439"
+        };
+
+        let app = firebase.initializeApp(config);
+        let db = app.database();
+        let picsRef = db.ref('pics');
+        let ansRef = db.ref('answers');
+
+
+        const sizes = [{ rows: 1, columns: 2 }, { rows: 2, columns: 3 }, { rows: 3, columns: 4 }];
+
+        var timeStarted = new Date().valueOf();
+        var timePrev = timeStarted;
+
+        var userAnswers = ansRef.push();
+
+        //var size = getRandomArbitrary(0, 5);
+
+        var size = permutations.shift();
+        var type = 2;
+
+        var mobile = false;
+
+        testExp = new RegExp('Android|webOS|iPhone|' +
+            'BlackBerry|Windows Phone|' +
+            'Opera Mini|IEMobile|Mobile',
+            'i');
+
+        if (testExp.test(navigator.userAgent)) {
+            mobile = true;
+        }
+
+        var answerProps = {
+            id: 'ansProps',
+            timeStart: timeStarted,
+            voteType: type,
+            columns: sizes[size].columns, //2-4
+            rows: sizes[size].rows, //1-3
+            mobile: mobile,
+            clientWidth: document.documentElement.clientWidth,
+            clientHeight: document.documentElement.clientHeight,
+        };
+
+        userAnswers.push(answerProps);
+
+        Vue.component('image-rate-vote', {
+            template: `
+        <div class="pic-pic">
+            <img :src="pic.src" :height="picSize" :width="picSize">
+        </div>`,
+            props: ['pic', 'picSize'],
+        });
+
+        Vue.component('number-rating', {
+            template: `
+        <div class = "vote-block">
+            <label v-for="n in 5" class="rating-numbers"><input type="radio" :name="'pic-' + pic.id" :value="n" class="radiob" v-model="stars" @click="sendValue">{{n}}</label>
+        </div>`,
+            props: ['pic', 'stars'],
+
+            methods: {
+                sendValue: function () {
+                    let time = new Date().valueOf();
+                    let taken = time - timePrev;
+                    var answer = {
+                        id: this.pic.id,
+                        rating: this.stars,
+                        timestamp: time,
+                        timetaken: taken
+                    };
+                    userAnswers.push(answer);
+                    timePrev = time;
+                }
+            }
+        });
+
+        Vue.component('heart-rating', {
+            template: `
+        <div class = "vote-block">
+            <i class="glyphicon glyph-icons like-heart"  @click="sendValue"
+            :class="{'like-heart-liked': isLiked, 'glyphicon-heart-empty': !isLiked, 'glyphicon-heart': isLiked}"></i>
+        </div>`,
+            props: ['pic'],
+            data: function () {
+                return {
+                    isLiked: false,
+                };
+            },
+            created() {
+                EventBus.$on('reset', this.reset);
+            },
+            methods: {
+                reset: function () {
+                    this.isLiked = false;
+                },
+                like: function () {
+                    this.isLiked = !this.isLiked;
+                },
+                sendValue: function () {
+                    this.like();
+                    let time = new Date().valueOf();
+                    let taken = time - timePrev;
+                    var answer = {
+                        id: this.pic.id,
+                        isLiked: this.isLiked,
+                        timestamp: time,
+                        timetaken: taken
+                    };
+                    userAnswers.push(answer);
+                    timePrev = time;
+                }
+            },
+        });
+
+        Vue.component('like-rating', {
+            template: `
+        <div class = "vote-block" v-on:reset="reset">
+            <i class="glyphicon glyphicon-thumbs-down glyph-icons"  @click="wrapDownvote" :class="{'thumbs-downvoted': downvoted}">
+            </i><i class="glyphicon glyphicon-thumbs-up glyph-icons" @click="wrapUpvote" :class="{'thumbs-upvoted': upvoted}"></i>
+        </div>`,
+            props: ['pic'],
+            created() {
+                EventBus.$on('reset', this.reset);
+            },
+            data: function () {
+                return {
+                    upvoted: false,
+                    downvoted: false
+                };
+            },
+            methods: {
+                reset: function () {
+                    this.upvoted = false;
+                    this.downvoted = false;
+                },
+                upvote: function () {
+                    this.upvoted = !this.upvoted;
+                    this.downvoted = false;
+                },
+                downvote: function () {
+                    this.downvoted = !this.downvoted;
+                    this.upvoted = false;
+                },
+                sendValue: function () {
+                    let time = new Date().valueOf();
+                    let taken = time - timePrev;
+                    var answer = {
+                        id: this.pic.id,
+                        upvoted: this.upvoted,
+                        downvoted: this.downvoted,
+                        timestamp: time,
+                        timetaken: taken
+                    };
+                    userAnswers.push(answer);
+                    timePrev = time;
+                },
+                wrapUpvote: function () {
+                    this.upvote();
+                    this.sendValue()
+                },
+                wrapDownvote: function () {
+                    this.downvote();
+                    this.sendValue()
+                },
+            },
+        });
+
+        var vm = new Vue({
+            el: "#app",
+            data: {
+                stage: 1,
+
+                calibration: {
+                    first: undefined,
+                    second: undefined
+                },
+
+                user: {
+                    age: undefined,
+                    gender: 0,
+                },
+
+                voteType: type,
+                columns: sizes[size].columns, //2-4
+                rows: sizes[size].rows, //1-3
+                amountOfPics: sizes[size].rows * sizes[size].columns,
+                currentPhase: 0,
+            },
+
+            methods: {
+                toStage: function (stage) {
+                    if (stage === 2) {
+                        var usr = {
+                            id: "UserData",
+                            gender: this.user.gender,
+                            age: this.user.age || 0,
+                        };
+                        userAnswers.push(usr);
+                    }
+                    if (stage === 3) {
+                        var clb = {
+                            id: "Calibration",
+                            first: this.calibration.first || -1,
+                            second: this.calibration.second || -1,
+                        };
+                        userAnswers.push(clb);
+                        timePrev = new Date().valueOf();
+                    }
+                    this.stage = stage;
+                },
+                showMeMore: function () {
+                    this.currentPhase = this.currentPhase + this.amountOfPics;
+                    if (randomiseType) {
+                        kek = permutations.shift();
+                        this.columns = sizes[kek].columns; //2-4
+                        this.rows = sizes[kek].rows; //1-3
+                        this.amountOfPics = this.columns * this.rows;
+                    }
+                    EventBus.$emit('reset');
+                }
+            },
+
+            //getting pics from firebase
+            firebase: {
+                pics: picsRef,
+            },
+
+            computed: {
+                picsNow: function () {
+                    return (this.pics.slice(this.currentPhase, this.currentPhase + this.amountOfPics));
+                },
+
+                calibrationHeight: function () {
+                    let calHeight = document.documentElement.clientHeight;
+                    return Math.floor((calHeight - 240) / 2);
+                },
+
+
+                picWidth: function () {
+                    let clientWidth = document.documentElement.clientWidth;
+                    let minwidth = 225;
+                    let curwidth = Math.floor((clientWidth - 30 * this.columns) / this.columns);
+                    if (minwidth > curwidth) return minwidth; else return curwidth;
+                },
+
+                picHeight: function () {
+                    let calHeight = document.documentElement.clientHeight;
+                    return Math.floor((calHeight - 40 - 30 * this.rows - 60 * this.rows) / this.rows);
+                },
+
+                picSize: function () {
+                    if (this.picHeight > this.picWidth) return (this.picWidth); else return (this.picHeight);
+                },
+
+                picWrapperWidth: function () {
+                    let minwidth = 225;
+                    let curwidth = this.picSize;
+                    if (minwidth > curwidth) var width = minwidth; else var width = curwidth;
+                    if (this.voteType !== 0) width = curwidth;
+                    return ((width + 15 + 15) * this.columns + "px");
+                }
+            }
+        });
+
+    </script>
+</body>
+
+</html>
